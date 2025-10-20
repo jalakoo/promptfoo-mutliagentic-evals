@@ -282,7 +282,30 @@ def call_api(
     logger.debug(f"call_api: context: {context}")
 
     try:
-        model_name = options["config"]["model_name"]
+        # Try to get model name from provider config first, then from test vars
+        model_name = None
+        
+        # Method 1: Provider config (traditional promptfoo approach)
+        if "config" in options and "model_name" in options["config"]:
+            model_name = options["config"]["model_name"]
+            logger.debug(f"Using model from provider config: {model_name}")
+        
+        # Method 2: Test vars (alternative approach)
+        elif "vars" in context and "model_name" in context["vars"]:
+            model_name = context["vars"]["model_name"]
+            logger.debug(f"Using model from test vars: {model_name}")
+        
+        # Method 3: Direct context vars
+        elif "model_name" in context:
+            model_name = context["model_name"]
+            logger.debug(f"Using model from direct context: {model_name}")
+        
+        # Method 4: Default fallback
+        else:
+            model_name = "openai/gpt-4o-mini"  # Default model
+            logger.warning(f"No model_name found, using default: {model_name}")
+        
+        logger.info(f"🔧 Running CrewAI with model: {model_name}")
         result = run(prompt, model_name)
         
         # Append Cypher query if one was captured
