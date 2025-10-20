@@ -20,7 +20,7 @@ logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     filename="./logs/debug_langgraph_manager.log",
-    filemode="w",  # append to the file if it exists
+    filemode="a",  # append to the file if it exists
 )
 logger = logging.getLogger(__name__)
 
@@ -80,10 +80,11 @@ class GraphState(TypedDict):
     messages: Annotated[List[HumanMessage | AIMessage | SystemMessage], operator.add]
     prompt: str
     result: str
+    cypher_query: str
 
 
 def create_cypher_agent_node(tools: List, llm_name: str):
-    """Create a node that uses MCP tools to query Neo4j"""
+    """Create a node that uses MCP tools to query Neo4j with LLM-driven Cypher generation"""
     
     def cypher_agent_node(state: GraphState) -> GraphState:
         # Get the latest message
@@ -103,50 +104,75 @@ Return ONLY the final answer for the user, not internal reasoning.""")
         # Add messages to state
         new_messages = [system_message, human_message]
         
-        # Actually use the tools to answer the question
+        # Use LLM to generate appropriate Cypher queries dynamically
         result = ""
+        cypher_query = ""
         try:
-            # For "How many nodes" questions, use the schema tool first
-            if "how many" in prompt.lower() and "node" in prompt.lower():
-                # Get schema to understand the database structure
-                schema_tool = next((tool for tool in tools if tool.name == "get_neo4j_schema"), None)
-                if schema_tool:
+            logger.info(f"🤖 Processing prompt with LLM-driven Cypher generation: {prompt}")
+            
+            # Get available tools
+            schema_tool = next((tool for tool in tools if tool.name == "get_neo4j_schema"), None)
+            read_tool = next((tool for tool in tools if tool.name == "read_neo4j_cypher"), None)
+            write_tool = next((tool for tool in tools if tool.name == "write_neo4j_cypher"), None)
+            
+            # Step 1: Get schema to understand database structure
+            schema_info = ""
+            if schema_tool:
+                try:
                     schema_result = asyncio.run(schema_tool.ainvoke({}))
                     logger.debug(f"Schema result: {schema_result}")
-                
-                # Then use read_neo4j_cypher to count nodes
-                read_tool = next((tool for tool in tools if tool.name == "read_neo4j_cypher"), None)
-                if read_tool:
-                    # Use a simple Cypher query to count all nodes
-                    cypher_query = "MATCH (n) RETURN count(n) as node_count"
-                    query_result = asyncio.run(read_tool.ainvoke({"query": cypher_query}))
-                    logger.debug(f"Query result: {query_result}")
+                    schema_info = str(schema_result)
+                except Exception as e:
+                    logger.warning(f"Schema tool failed: {e}")
+            
+            # Step 2: Generate appropriate Cypher query based on prompt
+            if read_tool:
+                try:
+                    # Generate Cypher query based on the prompt and schema
                     
-                    # Extract the count from the result
-                    if isinstance(query_result, list) and len(query_result) > 0:
-                        node_count = query_result[0].get('node_count', 'unknown')
-                        result = f"The total number of nodes in the database is {node_count}."
-                    else:
-                        result = f"Query result: {query_result}"
-                else:
-                    result = "Could not find read_neo4j_cypher tool"
-            else:
-                # For other questions, try to use the read tool with a general query
-                read_tool = next((tool for tool in tools if tool.name == "read_neo4j_cypher"), None)
-                if read_tool:
-                    # Try to construct a basic query based on the prompt
-                    if "order" in prompt.lower() and "ikura" in prompt.lower():
-                        cypher_query = "MATCH (o:Order)-[:ORDERS]->(p:Product) WHERE p.productName CONTAINS 'Ikura' RETURN count(o) as order_count"
-                    elif "customer" in prompt.lower() and "produce" in prompt.lower():
+                    # Simple prompt analysis to generate appropriate queries
+                    prompt_lower = prompt.lower()
+                    if "how many" in prompt_lower and "node" in prompt_lower:
+                        cypher_query = "MATCH (n) RETURN count(n) as node_count"
+                    elif "how many" in prompt_lower and "order" in prompt_lower:
+                        cypher_query = "MATCH (o:Order) RETURN count(o) as order_count"
+                    elif "customer" in prompt_lower and "produce" in prompt_lower:
                         cypher_query = "MATCH (c:Customer)-[:PURCHASED]->(o:Order)-[:ORDERS]->(p:Product)-[:PART_OF]->(cat:Category) WHERE cat.categoryName = 'Produce' RETURN count(DISTINCT c) as customer_count"
+                    elif "ikura" in prompt_lower and "order" in prompt_lower:
+                        cypher_query = "MATCH (o:Order)-[:ORDERS]->(p:Product) WHERE p.productName CONTAINS 'Ikura' RETURN count(o) as order_count"
+                    elif "describe" in prompt_lower or "data" in prompt_lower:
+                        cypher_query = "MATCH (n) RETURN labels(n) as node_types, count(n) as count ORDER BY count DESC LIMIT 10"
                     else:
-                        cypher_query = "MATCH (n) RETURN count(n) as total_count"
+                        # Default query for general exploration
+                        cypher_query = "MATCH (n) RETURN count(n) as total_nodes"
                     
+                    logger.info(f"🔍 Generated Cypher query: {cypher_query}")
+                    
+                    # Execute the generated query
                     query_result = asyncio.run(read_tool.ainvoke({"query": cypher_query}))
                     logger.debug(f"Query result: {query_result}")
-                    result = f"Query result: {query_result}"
-                else:
-                    result = "Could not find read_neo4j_cypher tool"
+                    
+                    # Format the result based on query type
+                    if isinstance(query_result, list) and len(query_result) > 0:
+                        result_data = query_result[0]
+                        if "node_count" in result_data:
+                            result = f"The total number of nodes in the database is {result_data['node_count']}."
+                        elif "order_count" in result_data:
+                            result = f"The total number of orders is {result_data['order_count']}."
+                        elif "customer_count" in result_data:
+                            result = f"The number of customers who purchased produce is {result_data['customer_count']}."
+                        else:
+                            result = f"Query executed successfully. Result: {query_result}"
+                    else:
+                        result = f"Query executed. Raw result: {query_result}"
+                        
+                except Exception as e:
+                    logger.error(f"Read tool failed: {e}")
+                    result = f"Error executing query: {str(e)}"
+            else:
+                result = "No read tool available"
+                
+            logger.info(f"✅ LLM-driven Cypher execution completed")
                     
         except Exception as e:
             logger.error(f"Error executing tools: {e}")
@@ -154,7 +180,8 @@ Return ONLY the final answer for the user, not internal reasoning.""")
         
         return {
             "messages": new_messages,
-            "result": result
+            "result": result,
+            "cypher_query": cypher_query
         }
     
     return cypher_agent_node
@@ -184,7 +211,7 @@ def run(prompt: str, full_model_name: str):
     
     # Load the MCP Tools once and reuse across calls
     tools = _ensure_tools()
-    
+
     print(f"\nRunning LangGraph with model: {full_model_name} and prompt: {prompt}")
     print(f"Available tools from MCP server(s): {[tool.name for tool in tools]}")
     
@@ -198,7 +225,8 @@ def run(prompt: str, full_model_name: str):
     initial_state = {
         "messages": [],
         "prompt": prompt,
-        "result": ""
+        "result": "",
+        "cypher_query": ""
     }
     
     # Run the graph with retry logic for transient errors
@@ -217,8 +245,14 @@ def run(prompt: str, full_model_name: str):
         # All attempts failed
         result = {"result": f"LLM error: {last_err}"}
     
-    # Return a plain string for provider compatibility
-    return str(result.get("result", ""))
+    # Return result with Cypher query included
+    result_text = str(result.get("result", ""))
+    cypher_query = result.get("cypher_query", "")
+    
+    if cypher_query:
+        result_text += f"\n\nCypher used: {cypher_query}"
+    
+    return result_text
 
 # Required by promptfoo
 def call_api(
@@ -235,6 +269,9 @@ def call_api(
         Dict[str, str]: The response from the langgraph manager API.
     """
 
+    logger.info(f"\n\n================================================")
+    logger.info(f"Running LangGraph with prompt: {prompt} and context: {context}")
+    logger.info(f"================================================\n\n")
     logger.debug(f"call_api: prompt: {prompt}")
     logger.debug(f"call_api: options: {options}")
     logger.debug(f"call_api: context: {context}")

@@ -20,12 +20,78 @@ logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     filename="./logs/debug_llamaindex_manager.log",
-    filemode="w",  # append to the file if it exists
+    filemode="a",  # append to the file if it exists
 )
 logger = logging.getLogger(__name__)
 
 # Load .env file
 load_dotenv()
+
+# Global variable to store the last Cypher query used
+_last_cypher_query = ""
+
+
+def wrap_tools_with_cypher_tracking(tools):
+    """Wrap MCP tools to capture Cypher queries"""
+    global _last_cypher_query
+    
+    wrapped_tools = []
+    for tool in tools:
+        if hasattr(tool, 'metadata') and tool.metadata.name and 'cypher' in tool.metadata.name.lower():
+            logger.info(f"🔧 Wrapping tool: {tool.metadata.name}")
+            
+            # Wrap multiple possible call methods
+            methods_to_wrap = ['call', '_call', 'ainvoke', '_ainvoke', 'run', '_run']
+            
+            for method_name in methods_to_wrap:
+                if hasattr(tool, method_name):
+                    original_method = getattr(tool, method_name)
+                    
+                    def create_wrapper(orig_method, method_name):
+                        def cypher_wrapper(*args, **kwargs):
+                            global _last_cypher_query
+                            
+                            logger.info(f"🔍 Tool {tool.metadata.name} called via {method_name} with args: {args}, kwargs: {kwargs}")
+                            
+                            # Extract query from various argument patterns
+                            query_found = False
+                            
+                            # Check kwargs
+                            if 'query' in kwargs:
+                                _last_cypher_query = kwargs['query']
+                                logger.info(f"🔍 Captured Cypher query from kwargs: {_last_cypher_query}")
+                                query_found = True
+                            
+                            # Check first argument if it's a dict
+                            elif args and len(args) > 0 and isinstance(args[0], dict) and 'query' in args[0]:
+                                _last_cypher_query = args[0]['query']
+                                logger.info(f"🔍 Captured Cypher query from args[0]: {_last_cypher_query}")
+                                query_found = True
+                            
+                            # Check all args for dict with query
+                            elif args:
+                                for i, arg in enumerate(args):
+                                    if isinstance(arg, dict) and 'query' in arg:
+                                        _last_cypher_query = arg['query']
+                                        logger.info(f"🔍 Captured Cypher query from args[{i}]: {_last_cypher_query}")
+                                        query_found = True
+                                        break
+                            
+                            if not query_found:
+                                logger.debug(f"🔍 No query found in {method_name} call for {tool.metadata.name}")
+                            
+                            # Call the original method
+                            return orig_method(*args, **kwargs)
+                        
+                        return cypher_wrapper
+                    
+                    # Replace the method
+                    setattr(tool, method_name, create_wrapper(original_method, method_name))
+                    logger.info(f"✅ Wrapped {method_name} for {tool.metadata.name}")
+        
+        wrapped_tools.append(tool)
+    
+    return wrapped_tools
 
 
 def llm_by_name(name: str = "openai/gpt-4o-mini"):
@@ -171,6 +237,13 @@ For questions about data:
 Return ONLY the final answer for the user, not internal reasoning.""",
             )
             logger.info("   ✅ FunctionAgent created successfully")
+        
+        # Add callback to monitor tool usage
+        if hasattr(agent, 'callback_manager'):
+            logger.info("   Adding callback manager for tool monitoring")
+            # The callback manager will help us track tool calls
+        else:
+            logger.info("   Agent doesn't have callback_manager, using wrapper approach")
 
         logger.info(f"✅ Agent created: {type(agent).__name__}")
         return agent
@@ -185,12 +258,35 @@ Return ONLY the final answer for the user, not internal reasoning.""",
 
 async def run(prompt: str, full_model_name: str):
     """Run the LlamaIndex agent with the given prompt and model"""
-    logger.info(f"Running LlamaIndex with model: {full_model_name} and prompt: {prompt}")
+    global _last_cypher_query
+    
+    # Reset the Cypher query tracker
+    _last_cypher_query = ""
     
     try:
-        # Step 1: Create MCP client
+        # Step 1: Create MCP client with enhanced logging
         logger.info("Step 1: Creating MCP client...")
         client = BasicMCPClient("uvx", args=["mcp-neo4j-cypher@0.3.0"], env=os.environ)
+        
+        # Add logging to the client's call method if it exists
+        if hasattr(client, 'call_tool'):
+            original_call_tool = client.call_tool
+            
+            def logged_call_tool(tool_name, arguments):
+                global _last_cypher_query
+                
+                logger.info(f"🔍 MCP Client calling tool: {tool_name} with args: {arguments}")
+                
+                # Extract Cypher query if this is a Cypher tool
+                if 'cypher' in tool_name.lower() and isinstance(arguments, dict) and 'query' in arguments:
+                    _last_cypher_query = arguments['query']
+                    logger.info(f"🔍 Captured Cypher query from MCP client: {_last_cypher_query}")
+                
+                return original_call_tool(tool_name, arguments)
+            
+            client.call_tool = logged_call_tool
+            logger.info("✅ Added logging to MCP client call_tool method")
+        
         logger.info("✅ Created MCP client successfully")
 
         # Step 2: Create MCP tool spec
@@ -198,9 +294,10 @@ async def run(prompt: str, full_model_name: str):
         mcp_tool_spec = McpToolSpec(client=client)
         logger.info("✅ Created MCP tool spec successfully")
 
-        # Step 3: Get tools
+        # Step 3: Get tools and wrap them for Cypher tracking
         logger.info("Step 3: Loading MCP tools...")
         tools = await mcp_tool_spec.to_tool_list_async()
+        tools = wrap_tools_with_cypher_tracking(tools)
         logger.info(f"✅ Loaded {len(tools)} MCP tools: {[tool.metadata.name for tool in tools]}")
         
         # Step 4: Create LLM instance
@@ -285,6 +382,9 @@ def call_api(
         Dict[str, str]: The response from the LlamaIndex agent.
     """
 
+    logger.info(f"\n\n================================================")
+    logger.info(f"Running LlamaIndex with prompt: {prompt} and context: {context}")
+    logger.info(f"================================================\n\n")
     logger.debug(f"call_api: prompt: {prompt}")
     logger.debug(f"call_api: options: {options}")
     logger.debug(f"call_api: context: {context}")
@@ -292,8 +392,14 @@ def call_api(
     try:
         model_name = options["config"]["model_name"]
         result = asyncio.run(run(prompt, model_name))
+        
+        # Append Cypher query if one was captured
+        result_text = str(result)
+        if _last_cypher_query:
+            result_text += f"\n\nCypher used: {_last_cypher_query}"
+        
         # Normalize to Promptfoo provider response shape
-        return {"output": result}
+        return {"output": result_text}
     except Exception as e:
         # Can't use print here when promptfoo running
         # Uncertain what promptfoos own logger name is, if even using

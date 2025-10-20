@@ -26,8 +26,8 @@ from typing import Dict, Any
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    filename="./logs/debug_crew_manager.log",
-    filemode="w",  # append to the file if it exists
+    filename="./logs/debug_crewai_manager.log",
+    filemode="a",  # append to the file if it exists
 )
 logger = logging.getLogger(__name__)
 
@@ -66,16 +66,71 @@ def _ensure_tools():
                 # Persist the adapter across calls
                 _mcp_adapter = MCPServerAdapter(server_params)
                 tools = _mcp_adapter.__enter__()
+                
+                # Wrap tools to capture Cypher queries
+                wrapped_tools = []
+                for tool in tools:
+                    if hasattr(tool, 'name') and 'cypher' in tool.name.lower():
+                        # Create a wrapper for Cypher tools
+                        original_run = tool._run
+                        
+                        def cypher_wrapper(*args, **kwargs):
+                            global _last_cypher_query
+                            
+                            # Extract query from arguments
+                            if 'query' in kwargs:
+                                _last_cypher_query = kwargs['query']
+                                logger.info(f"🔍 Captured Cypher query from tool call: {_last_cypher_query}")
+                            elif args and len(args) > 0 and isinstance(args[0], dict) and 'query' in args[0]:
+                                _last_cypher_query = args[0]['query']
+                                logger.info(f"🔍 Captured Cypher query from tool call: {_last_cypher_query}")
+                            
+                            # Call the original tool
+                            return original_run(*args, **kwargs)
+                        
+                        # Replace the _run method
+                        tool._run = cypher_wrapper
+                    
+                    wrapped_tools.append(tool)
+                
                 # Ensure clean shutdown on process exit
                 atexit.register(
                     lambda: _mcp_adapter and _mcp_adapter.__exit__(None, None, None)
                 )
-                _tools = tools
+                _tools = wrapped_tools
     return _tools
 
 
+# Global variable to store the last Cypher query used
+_last_cypher_query = ""
+
 # Optionally logging callbacks from Agents & Tasks
 def log_step_callback(output):
+    global _last_cypher_query
+    
+    # Extract Cypher query from tool calls if present
+    if hasattr(output, 'tool_calls') and output.tool_calls:
+        for tool_call in output.tool_calls:
+            if hasattr(tool_call, 'name') and 'cypher' in tool_call.name.lower():
+                if hasattr(tool_call, 'args') and 'query' in tool_call.args:
+                    _last_cypher_query = tool_call.args['query']
+                    logger.info(f"🔍 Captured Cypher query: {_last_cypher_query}")
+    
+    # Also check for Cypher queries in the raw output content
+    if hasattr(output, 'content') and output.content:
+        content_str = str(output.content)
+        # Look for Action Input patterns that contain Cypher queries
+        if 'Action Input:' in content_str and 'query' in content_str:
+            try:
+                import re
+                # Extract the query from Action Input: {'query': 'MATCH...', 'params': {}}
+                match = re.search(r"'query':\s*'([^']+)'", content_str)
+                if match:
+                    _last_cypher_query = match.group(1)
+                    logger.info(f"🔍 Captured Cypher query from content: {_last_cypher_query}")
+            except Exception as e:
+                logger.debug(f"Error extracting query from content: {e}")
+    
     print(
         f"""
         Step completed!
@@ -85,6 +140,22 @@ def log_step_callback(output):
 
 
 def log_task_callback(output):
+    global _last_cypher_query
+    
+    # Also check task output for Cypher queries
+    if hasattr(output, 'raw') and output.raw:
+        raw_str = str(output.raw)
+        if 'Action Input:' in raw_str and 'query' in raw_str:
+            try:
+                import re
+                # Extract the query from Action Input: {'query': 'MATCH...', 'params': {}}
+                match = re.search(r"'query':\s*'([^']+)'", raw_str)
+                if match:
+                    _last_cypher_query = match.group(1)
+                    logger.info(f"🔍 Captured Cypher query from task output: {_last_cypher_query}")
+            except Exception as e:
+                logger.debug(f"Error extracting query from task output: {e}")
+    
     print(
         f"""
         Task completed!
@@ -152,6 +223,11 @@ def mcp_crew(tools, llm_name: str):
 
 
 def run(prompt: str, full_model_name: str):
+    global _last_cypher_query
+    
+    # Reset the Cypher query tracker
+    _last_cypher_query = ""
+    
     # Load the MCP Tools once and reuse across calls
     tools = _ensure_tools()
 
@@ -198,6 +274,9 @@ def call_api(
         Dict[str, str]: The response from the crew manager API.
     """
 
+    logger.info(f"\n\n================================================")
+    logger.info(f"Running Crew with prompt: {prompt} and context: {context}")
+    logger.info(f"================================================\n\n")
     logger.debug(f"call_api: prompt: {prompt}")
     logger.debug(f"call_api: options: {options}")
     logger.debug(f"call_api: context: {context}")
@@ -205,8 +284,14 @@ def call_api(
     try:
         model_name = options["config"]["model_name"]
         result = run(prompt, model_name)
+        
+        # Append Cypher query if one was captured
+        result_text = str(result)
+        if _last_cypher_query:
+            result_text += f"\n\nCypher used: {_last_cypher_query}"
+        
         # Normalize to Promptfoo provider response shape
-        return {"output": result}
+        return {"output": result_text}
     except Exception as e:
         # Can't user print here when promptfoo running
         # Uncertain what promptfoos own logger name is, if even using
