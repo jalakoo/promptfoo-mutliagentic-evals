@@ -3,11 +3,11 @@ import os
 import asyncio
 from typing import Dict, Any, List
 from dotenv import load_dotenv
+from shared_utils import get_model_name_from_config
 
 # LlamaIndex imports
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.agent.workflow import ReActAgent
-
 from llama_index.llms.openai import OpenAI
 from llama_index.llms.ollama import Ollama
 from llama_index.llms.anthropic import Anthropic
@@ -177,15 +177,20 @@ def llm_by_name(name: str = "openai/gpt-4o-mini"):
         raise
 
 
-def create_llamaindex_agent(tools: Any, llm_name: str):
+def create_llamaindex_agent(tools: Any, llm_name: str, llm=None):
     """Create a LlamaIndex FunctionAgent with Neo4j MCP tools"""
     logger.info(f"Creating LlamaIndex agent for model: {llm_name}")
     logger.info(f"   Tools available: {len(tools)}")
     logger.info(f"   Tool names: {[tool.metadata.name for tool in tools]}")
     
     try:
-        llm = llm_by_name(llm_name)
-        logger.info(f"✅ LLM created: {type(llm).__name__}")
+        # Use provided LLM or create new one
+        if llm is None:
+            llm = llm_by_name(llm_name)
+            logger.info(f"✅ LLM created: {type(llm).__name__}")
+        else:
+            logger.info(f"✅ Using provided LLM: {type(llm).__name__}")
+        
         logger.info(f"   Model: {llm.model if hasattr(llm, 'model') else 'unknown'}")
 
         # Switch statement to choose agent type based on LLM provider
@@ -323,9 +328,9 @@ async def run(prompt: str, full_model_name: str):
                 logger.error(f"   Or check: ollama list")
                 return f"Ollama connectivity error: {ollama_error}"
 
-        # Step 6: Create agent
+        # Step 6: Create agent (pass the already-created LLM)
         logger.info("Step 6: Creating agent...")
-        agent = create_llamaindex_agent(tools, full_model_name)
+        agent = create_llamaindex_agent(tools, full_model_name, llm)
         logger.info(f"✅ Created agent: {type(agent).__name__}")
         
         # Step 7: Run agent
@@ -390,28 +395,8 @@ def call_api(
     logger.debug(f"call_api: context: {context}")
 
     try:
-        # Try to get model name from provider config first, then from test vars
-        model_name = None
-        
-        # Method 1: Provider config (traditional promptfoo approach)
-        if "config" in options and "model_name" in options["config"]:
-            model_name = options["config"]["model_name"]
-            logger.debug(f"Using model from provider config: {model_name}")
-        
-        # Method 2: Test vars (alternative approach)
-        elif "vars" in context and "model_name" in context["vars"]:
-            model_name = context["vars"]["model_name"]
-            logger.debug(f"Using model from test vars: {model_name}")
-        
-        # Method 3: Direct context vars
-        elif "model_name" in context:
-            model_name = context["model_name"]
-            logger.debug(f"Using model from direct context: {model_name}")
-        
-        # Method 4: Default fallback
-        else:
-            model_name = "openai/gpt-4o-mini"  # Default model
-            logger.warning(f"No model_name found, using default: {model_name}")
+        # Get model name using shared utility
+        model_name = get_model_name_from_config(options, context)
         
         logger.info(f"🔧 Running LlamaIndex with model: {model_name}")
         result = asyncio.run(run(prompt, model_name))

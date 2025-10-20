@@ -11,8 +11,11 @@ providers:
   # -----------------------------
   # Testing CrewAI
   # -----------------------------
-    - id: "file://crewai_manager.py"
-      label: "crewai"
+   # Example using test vars for model name definitions
+    # - id: "file://crewai_manager.py"
+    #   label: "crewai"
+
+  # Example using provider config for model name definitions
   # - id: "file://crewai_manager.py"
   #   label: "crewai-ollama/gpt-oss:20b"
   #   config: {
@@ -208,31 +211,43 @@ tests:
   # For using multiple variables, see https://www.promptfoo.dev/docs/configuration/guide/#multiple-variables-in-a-single-test-case
 
   # Simple count queries
+  # - vars:
+  #     question: "How many nodes are in the database?"
+  #     model_name:
+  #       - "ollama/llama3.2"
+  #       # - "ollama/gpt-oss:20b"
+  #       # - "ollama/qwen3"
+  #       # - "ollama/lfm2-1.2b"
+  #       - "sambanova/Meta-Llama-3.1-8B-Instruct"
+  #       # - "sambanova/Llama-4-Maverick-17B-128E-Instruct"
+  #       - "openai/o3-mini"
+  #       # - "openai/gpt-5"
+  #       # - "openai/gpt-4.1"
+  #       - "anthropic/claude-3-haiku-20240307"
+  #       # - "anthropic/claude-opus-4-1-20250805"
+  #   assert:
+  #     - type: contains-any
+  #       value: 
+  #         - "1035"
+  #         - "1,035"
+
   - vars:
-      question: "How many nodes are in the database?"
+      question: "How many customers are there?"
       model_name:
-        - "ollama/llama3.2"
+        # - "ollama/llama3.2"
         # - "ollama/gpt-oss:20b"
         # - "ollama/qwen3"
         # - "ollama/lfm2-1.2b"
-        # - "sambanova/llama-3.1-8b-instruct"
+        - "sambanova/Meta-Llama-3.1-8B-Instruct"
         # - "sambanova/Llama-4-Maverick-17B-128E-Instruct"
         # - "openai/o3-mini"
         # - "openai/gpt-5"
         # - "openai/gpt-4.1"
-        # - "anthropic/claude-3-haiku-20240307"
+        - "anthropic/claude-3-haiku-20240307"
         # - "anthropic/claude-opus-4-1-20250805"
     assert:
-      - type: contains-any
-        value: 
-          - "1035"
-          - "1,035"
-
-  # - vars:
-  #     question: "How many customers are there?"
-  #   assert:
-  #     - type: icontains
-  #       value: "91"
+      - type: icontains
+        value: "91"
 
   # 1 hop queries
   # - vars:

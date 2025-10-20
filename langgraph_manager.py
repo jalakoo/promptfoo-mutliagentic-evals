@@ -1,9 +1,10 @@
-
-
 import asyncio
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
+from langchain_community.llms import Ollama
+from langchain_anthropic import ChatAnthropic
+# from langchain_community.llms import SambaNova
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from mcp import StdioServerParameters
 from dotenv import load_dotenv
@@ -14,6 +15,7 @@ from typing import Dict, Any, List, TypedDict, Annotated
 import operator
 import logging
 from typing import Dict, Any
+from shared_utils import get_model_name_from_config
 
 # Configure logging to write to error.log
 logging.basicConfig(
@@ -63,6 +65,9 @@ def _ensure_tools():
                             )
                         }
                     )
+
+
+                    
                     # Get tools from MCP client using asyncio.run
                     _tools = asyncio.run(_mcp_client.get_tools())
                     # Ensure clean shutdown on process exit
@@ -113,7 +118,6 @@ Return ONLY the final answer for the user, not internal reasoning.""")
             # Get available tools
             schema_tool = next((tool for tool in tools if tool.name == "get_neo4j_schema"), None)
             read_tool = next((tool for tool in tools if tool.name == "read_neo4j_cypher"), None)
-            write_tool = next((tool for tool in tools if tool.name == "write_neo4j_cypher"), None)
             
             # Step 1: Get schema to understand database structure
             schema_info = ""
@@ -125,46 +129,113 @@ Return ONLY the final answer for the user, not internal reasoning.""")
                 except Exception as e:
                     logger.warning(f"Schema tool failed: {e}")
             
-            # Step 2: Generate appropriate Cypher query based on prompt
+            # Step 2: Use LLM to generate Cypher query based on prompt and schema
             if read_tool:
                 try:
-                    # Generate Cypher query based on the prompt and schema
                     
-                    # Simple prompt analysis to generate appropriate queries
-                    prompt_lower = prompt.lower()
-                    if "how many" in prompt_lower and "node" in prompt_lower:
-                        cypher_query = "MATCH (n) RETURN count(n) as node_count"
-                    elif "how many" in prompt_lower and "order" in prompt_lower:
-                        cypher_query = "MATCH (o:Order) RETURN count(o) as order_count"
-                    elif "customer" in prompt_lower and "produce" in prompt_lower:
-                        cypher_query = "MATCH (c:Customer)-[:PURCHASED]->(o:Order)-[:ORDERS]->(p:Product)-[:PART_OF]->(cat:Category) WHERE cat.categoryName = 'Produce' RETURN count(DISTINCT c) as customer_count"
-                    elif "ikura" in prompt_lower and "order" in prompt_lower:
-                        cypher_query = "MATCH (o:Order)-[:ORDERS]->(p:Product) WHERE p.productName CONTAINS 'Ikura' RETURN count(o) as order_count"
-                    elif "describe" in prompt_lower or "data" in prompt_lower:
-                        cypher_query = "MATCH (n) RETURN labels(n) as node_types, count(n) as count ORDER BY count DESC LIMIT 10"
+                    # Create LLM instance based on model name
+                    logger.info(f"🔧 Creating LLM for model: {llm_name}")
+                    
+                    if "ollama/" in llm_name:
+                        model_name = llm_name.split("/")[1]
+                        logger.info(f"🦙 Using Ollama model: {model_name}")
+                        llm = Ollama(model=model_name, base_url="http://localhost:11434")
+                    elif "openai/" in llm_name:
+                        model_name = llm_name.split("/")[1]
+                        logger.info(f"🤖 Using OpenAI model: {model_name}")
+                        llm = ChatOpenAI(model=model_name, temperature=0)
+                    elif "anthropic/" in llm_name:
+                        model_name = llm_name.split("/")[1]
+                        logger.info(f"🧠 Using Anthropic model: {model_name}")
+                        llm = ChatAnthropic(model=model_name, temperature=0)
+                    elif "sambanova/" in llm_name:
+                        logger.warning(f"SambaNova is not supported for the current version of langchain-core, falling back to OpenAI")
+                        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
                     else:
-                        # Default query for general exploration
-                        cypher_query = "MATCH (n) RETURN count(n) as total_nodes"
+                        # Default to OpenAI if no provider specified
+                        logger.info(f"🤖 Using default OpenAI model: {llm_name}")
+                        llm = ChatOpenAI(model=llm_name, temperature=0)
+                    
+                    # Generate Cypher query using LLM
+                    query_generation_prompt = f"""Based on the user's question: "{prompt}"
+
+And the database schema: {schema_info}
+
+Generate a single, precise Cypher query to answer the question. Return ONLY the Cypher query, nothing else.
+
+Examples:
+- "How many nodes are in the database?" → MATCH (n) RETURN count(n) as node_count
+- "How many orders are there?" → MATCH (o:Order) RETURN count(o) as order_count
+- "Describe the data" → MATCH (n) RETURN labels(n) as node_types, count(n) as count ORDER BY count DESC LIMIT 10
+
+Cypher query:"""
+                    
+                    logger.info(f"🧠 Generating Cypher query with LLM for prompt: {prompt}")
+                    llm_response = llm.invoke(query_generation_prompt)
+                    logger.debug(f"Raw LLM response: {llm_response}")
+                    
+                    # Extract the actual content from the LLM response
+                    if hasattr(llm_response, 'content'):
+                        cypher_query = llm_response.content.strip()
+                        logger.debug(f"Extracted content from response: {cypher_query}")
+                    else:
+                        cypher_query = str(llm_response).strip()
+                        logger.debug(f"Using string representation: {cypher_query}")
+                    
+                    # Clean up the query (remove any extra text and metadata)
+                    # Handle the specific case from the error: content='QUERY' additional_kwargs=...
+                    if "content='" in cypher_query and "' additional_kwargs" in cypher_query:
+                        start = cypher_query.find("content='") + 9
+                        end = cypher_query.find("' additional_kwargs")
+                        cypher_query = cypher_query[start:end]
+                    elif 'content="' in cypher_query and '" additional_kwargs' in cypher_query:
+                        start = cypher_query.find('content="') + 9
+                        end = cypher_query.find('" additional_kwargs')
+                        cypher_query = cypher_query[start:end]
+                    
+                    # Remove common prefixes/suffixes that LLMs might add
+                    cypher_query = cypher_query.replace("Cypher query:", "").strip()
+                    cypher_query = cypher_query.replace("Query:", "").strip()
+                    cypher_query = cypher_query.replace("```cypher", "").strip()
+                    cypher_query = cypher_query.replace("```", "").strip()
+                    
+                    # Take only the first line if multiple lines
+                    if "\n" in cypher_query:
+                        cypher_query = cypher_query.split("\n")[0].strip()
+                    
+                    # Remove any remaining quotes or extra characters
+                    cypher_query = cypher_query.strip('"').strip("'").strip()
                     
                     logger.info(f"🔍 Generated Cypher query: {cypher_query}")
                     
-                    # Execute the generated query
-                    query_result = asyncio.run(read_tool.ainvoke({"query": cypher_query}))
-                    logger.debug(f"Query result: {query_result}")
-                    
-                    # Format the result based on query type
-                    if isinstance(query_result, list) and len(query_result) > 0:
-                        result_data = query_result[0]
-                        if "node_count" in result_data:
-                            result = f"The total number of nodes in the database is {result_data['node_count']}."
-                        elif "order_count" in result_data:
-                            result = f"The total number of orders is {result_data['order_count']}."
-                        elif "customer_count" in result_data:
-                            result = f"The number of customers who purchased produce is {result_data['customer_count']}."
-                        else:
-                            result = f"Query executed successfully. Result: {query_result}"
+                    # Validate that we have a proper Cypher query
+                    if not cypher_query or len(cypher_query.strip()) == 0:
+                        logger.error("❌ Generated Cypher query is empty")
+                        result = "Error: Could not generate a valid Cypher query"
+                        cypher_query = ""
+                    elif not any(keyword in cypher_query.upper() for keyword in ['MATCH', 'CREATE', 'MERGE', 'DELETE', 'SET', 'RETURN']):
+                        logger.error(f"❌ Generated query doesn't appear to be valid Cypher: {cypher_query}")
+                        result = f"Error: Generated query doesn't appear to be valid Cypher: {cypher_query}"
                     else:
-                        result = f"Query executed. Raw result: {query_result}"
+                        # Execute the generated query
+                        logger.info(f"🚀 Executing Cypher query: {cypher_query}")
+                        query_result = asyncio.run(read_tool.ainvoke({"query": cypher_query}))
+                        logger.debug(f"Query result: {query_result}")
+                        
+                        # Format the result
+                        if isinstance(query_result, list) and len(query_result) > 0:
+                            result_data = query_result[0]
+                            if isinstance(result_data, dict):
+                                # Format based on the actual data returned
+                                if len(result_data) == 1:
+                                    key, value = next(iter(result_data.items()))
+                                    result = f"The {key.replace('_', ' ')} is {value}."
+                                else:
+                                    result = f"Query executed successfully. Result: {query_result}"
+                            else:
+                                result = f"Query executed successfully. Result: {query_result}"
+                        else:
+                            result = f"Query executed. Raw result: {query_result}"
                         
                 except Exception as e:
                     logger.error(f"Read tool failed: {e}")
@@ -233,21 +304,28 @@ def run(prompt: str, full_model_name: str):
     last_err = None
     for attempt in range(2):
         try:
+            logger.info(f"🔄 Running graph.invoke (attempt {attempt + 1})")
             result = graph.invoke(initial_state)
+            logger.info(f"✅ Graph execution completed successfully")
             break
         except Exception as e:
             last_err = e
             import time, logging
             
+            logger.error(f"❌ Error during graph.invoke (attempt {attempt + 1}): {e}")
             logging.exception("Error during graph.invoke (attempt %d)", attempt + 1)
             time.sleep(0.5)
     else:
         # All attempts failed
-        result = {"result": f"LLM error: {last_err}"}
+        logger.error(f"❌ All graph execution attempts failed: {last_err}")
+        result = {"result": f"LLM error: {last_err}", "cypher_query": ""}
     
     # Return result with Cypher query included
     result_text = str(result.get("result", ""))
     cypher_query = result.get("cypher_query", "")
+    
+    logger.info(f"📊 Final result: {result_text[:100]}...")
+    logger.info(f"🔍 Cypher query: {cypher_query}")
     
     if cypher_query:
         result_text += f"\n\nCypher used: {cypher_query}"
@@ -277,28 +355,8 @@ def call_api(
     logger.debug(f"call_api: context: {context}")
 
     try:
-        # Try to get model name from provider config first, then from test vars
-        model_name = None
-        
-        # Method 1: Provider config (traditional promptfoo approach)
-        if "config" in options and "model_name" in options["config"]:
-            model_name = options["config"]["model_name"]
-            logger.debug(f"Using model from provider config: {model_name}")
-        
-        # Method 2: Test vars (alternative approach)
-        elif "vars" in context and "model_name" in context["vars"]:
-            model_name = context["vars"]["model_name"]
-            logger.debug(f"Using model from test vars: {model_name}")
-        
-        # Method 3: Direct context vars
-        elif "model_name" in context:
-            model_name = context["model_name"]
-            logger.debug(f"Using model from direct context: {model_name}")
-        
-        # Method 4: Default fallback
-        else:
-            model_name = "openai/gpt-4o-mini"  # Default model
-            logger.warning(f"No model_name found, using default: {model_name}")
+        # Get model name using shared utility
+        model_name = get_model_name_from_config(options, context)
         
         logger.info(f"🔧 Running LangGraph with model: {model_name}")
         result = run(prompt, model_name)

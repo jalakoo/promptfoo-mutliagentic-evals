@@ -1447,6 +1447,61 @@ wheels = [
 ]
 
 [[package]]
+name = "langchain-anthropic"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anthropic" },
+    { name = "langchain-core" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/72/65/89ea83fe8e89381d31e8137b294f1858dea27f82c535553928783f8e669c/langchain_anthropic-1.0.0.tar.gz", hash = "sha256:a4f1168d119fb620f9c36e3db5c9fe632d1a0daee026d1c99234820cea714f32", size = 700946, upload-time = "2025-10-17T14:07:20.021Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/05/59/96b4edcca672875af4e60c3cafc2b6bbd6e9656a965dfb3543c758c0fbce/langchain_anthropic-1.0.0-py3-none-any.whl", hash = "sha256:455094c91d5c1d573830d023c964e1f2f8232e9c6c95df20468c8f9dc4ff9a50", size = 46403, upload-time = "2025-10-17T14:07:19.04Z" },
+]
+
+[[package]]
+name = "langchain-classic"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "langchain-core" },
+    { name = "langchain-text-splitters" },
+    { name = "langsmith" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "requests" },
+    { name = "sqlalchemy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d9/b1/a66babeccb2c05ed89690a534296688c0349bee7a71641e91ecc2afd72fd/langchain_classic-1.0.0.tar.gz", hash = "sha256:a63655609254ebc36d660eb5ad7c06c778b2e6733c615ffdac3eac4fbe2b12c5", size = 10514930, upload-time = "2025-10-17T16:02:47.887Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/74/74/246f809a3741c21982f985ca0113ec92d3c84896308561cc4414823f6951/langchain_classic-1.0.0-py3-none-any.whl", hash = "sha256:97f71f150c10123f5511c08873f030e35ede52311d729a7688c721b4e1e01f33", size = 1040701, upload-time = "2025-10-17T16:02:46.35Z" },
+]
+
+[[package]]
+name = "langchain-community"
+version = "0.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "dataclasses-json" },
+    { name = "httpx-sse" },
+    { name = "langchain-classic" },
+    { name = "langchain-core" },
+    { name = "langsmith" },
+    { name = "numpy" },
+    { name = "pydantic-settings" },
+    { name = "pyyaml" },
+    { name = "requests" },
+    { name = "sqlalchemy" },
+    { name = "tenacity" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/30/be/07ad676e0e8c2afa96584ee5624967fa08f64efd04930cbb5d48eba6d693/langchain_community-0.4.tar.gz", hash = "sha256:11ff08c3d923641cecbe17379cfeeb1258eed1b51bbf1784362d69bb5fe38bf2", size = 33242918, upload-time = "2025-10-17T19:05:40.878Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1b/5e/8101e972895ba2732d1a59ba93da47aa394f02455f018d339fb94f45b08c/langchain_community-0.4-py3-none-any.whl", hash = "sha256:79034e7bd4ba3a67ae9d7dd7fcef63ef4ed44673480fea0405ab45295985d56d", size = 2533111, upload-time = "2025-10-17T19:05:38.61Z" },
+]
+
+[[package]]
 name = "langchain-core"
 version = "1.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1476,6 +1531,32 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ac/4e/b84af2e379edfb51db78edcfc6eab7dca798f2ce9d74b73e29f5f207685c/langchain_mcp_adapters-0.1.11.tar.gz", hash = "sha256:a217c49086b162344749f7f99a148fc12482e2da8e0260b2e35fc93afb31b38d", size = 23061, upload-time = "2025-10-03T14:53:13.98Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/cc/5f9b23cce308b2c30246e31712bf1a53ae49d97bab8b3d9bc9cfe364f82c/langchain_mcp_adapters-0.1.11-py3-none-any.whl", hash = "sha256:7b35921e9487bcb3ea3d94bf10341316ac897e2997e8a16032ae514834a9685d", size = 15751, upload-time = "2025-10-03T14:53:12.358Z" },
+]
+
+[[package]]
+name = "langchain-openai"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "langchain-core" },
+    { name = "openai" },
+    { name = "tiktoken" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/bc/16/e7f69c584432b33cec31d9e09ffc53b612cc971ba81739d1ff62bb84d5d8/langchain_openai-1.0.0.tar.gz", hash = "sha256:14b4f8e77e2ace62e390fe4824f08718b227ed86b476983ce4f0063fa258e966", size = 1023557, upload-time = "2025-10-17T15:43:22.308Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/02/1f/0440b1bacc3dbfb8e34d9b478e3f3d333384f32ba6b753907b5ff9dc8c17/langchain_openai-1.0.0-py3-none-any.whl", hash = "sha256:e42b856ae53d2f6f3afd2ecb875056025d8c0b8f313a89fc66eb682c6b958111", size = 80465, upload-time = "2025-10-17T15:43:20.771Z" },
+]
+
+[[package]]
+name = "langchain-text-splitters"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "langchain-core" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fa/2e/c833dcc379c1c086453708ef5eef7d4d1f808559ca4458bd6569d5d83ad7/langchain_text_splitters-1.0.0.tar.gz", hash = "sha256:d8580a20ad7ed10b432feb273e5758b2cc0902d094919629cec0e1ad691a6744", size = 264257, upload-time = "2025-10-17T14:33:41.743Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1e/97/d362353ab04f865af6f81d4d46e7aa428734aa032de0017934b771fc34b7/langchain_text_splitters-1.0.0-py3-none-any.whl", hash = "sha256:f00c8219d3468f2c5bd951b708b6a7dd9bc3c62d0cfb83124c377f7170f33b2e", size = 33851, upload-time = "2025-10-17T14:33:40.46Z" },
 ]
 
 [[package]]
@@ -2753,8 +2834,11 @@ source = { virtual = "." }
 dependencies = [
     { name = "crewai" },
     { name = "crewai-tools", extra = ["mcp"] },
+    { name = "langchain-anthropic" },
+    { name = "langchain-community" },
     { name = "langchain-core" },
     { name = "langchain-mcp-adapters" },
+    { name = "langchain-openai" },
     { name = "langgraph" },
     { name = "litellm" },
     { name = "llama-index" },
@@ -2764,6 +2848,7 @@ dependencies = [
     { name = "llama-index-llms-sambanovasystems" },
     { name = "llama-index-tools-mcp" },
     { name = "mcp" },
+    { name = "ollama" },
     { name = "python-dotenv" },
     { name = "sseclient-py" },
 ]
@@ -2772,8 +2857,11 @@ dependencies = [
 requires-dist = [
     { name = "crewai", specifier = ">=0.203.1" },
     { name = "crewai-tools", extras = ["mcp"], specifier = ">=0.76.0" },
+    { name = "langchain-anthropic", specifier = ">=1.0.0" },
+    { name = "langchain-community", specifier = ">=0.4" },
     { name = "langchain-core", specifier = ">=1.0.0" },
     { name = "langchain-mcp-adapters", specifier = ">=0.1.11" },
+    { name = "langchain-openai", specifier = ">=1.0.0" },
     { name = "langgraph", specifier = ">=1.0.0" },
     { name = "litellm", specifier = ">=1.74.9" },
     { name = "llama-index", specifier = ">=0.14.5" },
@@ -2783,6 +2871,7 @@ requires-dist = [
     { name = "llama-index-llms-sambanovasystems", specifier = ">=0.5.1" },
     { name = "llama-index-tools-mcp", specifier = ">=0.4.2" },
     { name = "mcp", specifier = ">=1.18.0" },
+    { name = "ollama", specifier = ">=0.6.0" },
     { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "sseclient-py", specifier = ">=1.8.0" },
 ]
