@@ -1,0 +1,27 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+
+# env files
+.env
+
+# outputs logs
+debug.log
+output.html
+output.json
+promptfoo-errors.log
+logs/
+
+# os
+.DS_Store
+
+# Output runs
+outputs/
