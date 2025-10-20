@@ -20,7 +20,7 @@ logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     filename="./logs/debug_llamaindex_manager.log",
-    filemode="a",  # append to the file if it exists
+    filemode="w",  # overwrite the file on each run
 )
 logger = logging.getLogger(__name__)
 
