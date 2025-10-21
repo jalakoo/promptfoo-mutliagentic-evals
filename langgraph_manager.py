@@ -98,9 +98,18 @@ def create_cypher_agent_node(tools: List, llm_name: str):
         
         # Create system message with tool instructions
         system_message = SystemMessage(content="""You are an expert data analyst proficient in Cypher and Neo4j.
-You have access to MCP tools to: (1) inspect the schema, (2) read data with Cypher, and (3) write data with Cypher.
-Use the minimal set of tool calls needed to answer the user's question.
-Always validate Cypher syntax before execution and avoid destructive writes unless explicitly requested.
+
+You have access to these tools:
+1. get_neo4j_schema: Get the database schema to understand node types and relationships
+2. read_neo4j_cypher: Execute read-only Cypher queries to retrieve data
+3. write_neo4j_cypher: Execute write Cypher queries to modify data (use with caution)
+
+For questions about data:
+- First use get_neo4j_schema to understand the database structure
+- Then use read_neo4j_cypher with appropriate Cypher queries to answer the question
+- For "how many" questions, use: MATCH (n) RETURN count(n) as node_count
+- Always provide the final answer clearly
+
 Return ONLY the final answer for the user, not internal reasoning.""")
 
         # Create human message with the prompt
@@ -143,18 +152,18 @@ Return ONLY the final answer for the user, not internal reasoning.""")
                     elif "openai/" in llm_name:
                         model_name = llm_name.split("/")[1]
                         logger.info(f"🤖 Using OpenAI model: {model_name}")
-                        llm = ChatOpenAI(model=model_name, temperature=0)
+                        llm = ChatOpenAI(model=model_name)
                     elif "anthropic/" in llm_name:
                         model_name = llm_name.split("/")[1]
                         logger.info(f"🧠 Using Anthropic model: {model_name}")
                         llm = ChatAnthropic(model=model_name, temperature=0)
                     elif "sambanova/" in llm_name:
-                        logger.warning(f"SambaNova is not supported for the current version of langchain-core, falling back to OpenAI")
-                        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+                        logger.error(f"SambaNova is not supported for the current version of langchain-core")
+                        raise ValueError("SambaNova is not supported for the current version of langchain-core")
                     else:
-                        # Default to OpenAI if no provider specified
-                        logger.info(f"🤖 Using default OpenAI model: {llm_name}")
-                        llm = ChatOpenAI(model=llm_name, temperature=0)
+                        logger.error(f"Unsupported model: {llm_name}")
+                        raise ValueError(f"Unsupported model: {llm_name}")
+
                     
                     # Generate Cypher query using LLM
                     query_generation_prompt = f"""Based on the user's question: "{prompt}"

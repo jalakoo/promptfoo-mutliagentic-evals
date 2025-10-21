@@ -95,8 +95,8 @@ def wrap_tools_with_cypher_tracking(tools):
 
 
 def llm_by_name(name: str = "openai/gpt-4o-mini"):
-    """Create LLM instance based on model name"""
-    logger.info(f"Creating LLM for name: {name}")
+    """Create LLM instance based on model name with explicit validation"""
+    logger.info(f"🔧 Creating LLM for model: {name}")
     
     # Extract prefix and model name
     if "/" in name:
@@ -107,18 +107,19 @@ def llm_by_name(name: str = "openai/gpt-4o-mini"):
     
     logger.info(f"   Parsed prefix: {prefix}, model: {model_name}")
     
-    try:
-        if prefix == "ollama":
+    # Validate supported model providers
+    if prefix == "ollama":
+        logger.info(f"🦙 Using Ollama model: {model_name}")
+        
+        base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        timeout = os.getenv("OLLAMA_TIMEOUT", 120)
+        request_timeout = os.getenv("OLLAMA_REQUEST_TIMEOUT", 180)
 
-            base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-            timeout = os.getenv("OLLAMA_TIMEOUT", 120)
-            request_timeout = os.getenv("OLLAMA_REQUEST_TIMEOUT", 180)
-
-            logger.info(f"   Creating Ollama LLM with model: {model_name}")
-            logger.info(f"   Base URL: {base_url}")
-            logger.info(f"   Timeout: {timeout} seconds")
-            logger.info(f"   Request Timeout: {request_timeout} seconds")
-            
+        logger.info(f"   Base URL: {base_url}")
+        logger.info(f"   Timeout: {timeout} seconds")
+        logger.info(f"   Request Timeout: {request_timeout} seconds")
+        
+        try:
             llm = Ollama(
                 model=model_name,
                 temperature=0,
@@ -128,40 +129,16 @@ def llm_by_name(name: str = "openai/gpt-4o-mini"):
             )
             logger.info(f"   ✅ Ollama LLM created successfully")
             return llm
+        except Exception as e:
+            logger.error(f"   ❌ Failed to create Ollama LLM: {e}")
+            raise
             
-        elif prefix == "anthropic":
-            logger.info(f"   Creating Anthropic LLM with model: {model_name}")
-            api_key = os.getenv("ANTHROPIC_API_KEY")
-            logger.info(f"   API Key present: {'Yes' if api_key else 'No'}")
-            
-            llm = Anthropic(
-                model=model_name,
-                temperature=0,
-                api_key=api_key
-            )
-            logger.info(f"   ✅ Anthropic LLM created successfully")
-            return llm
-            
-        elif prefix == "sambanova":
-            logger.info(f"   Creating SambaNova LLM with model: {model_name}")
-            
-            llm = SambaNovaCloud(
-                model=model_name,
-                context_window=100000,
-                max_tokens=1024,
-                temperature=0.7,
-                top_k=1,
-                top_p=0.01,
-            )
-            logger.info(f"   ✅ SambaNova LLM created successfully")
-            return llm
-            
-        else:
-            # Default to OpenAI - many LLMs conform to this interface
-            logger.info(f"   Creating OpenAI LLM with model: {model_name}")
-            api_key = os.getenv("OPENAI_API_KEY")
-            logger.info(f"   API Key present: {'Yes' if api_key else 'No'}")
-            
+    elif prefix == "openai":
+        logger.info(f"🤖 Using OpenAI model: {model_name}")
+        api_key = os.getenv("OPENAI_API_KEY")
+        logger.info(f"   API Key present: {'Yes' if api_key else 'No'}")
+        
+        try:
             llm = OpenAI(
                 model=model_name,
                 temperature=0,
@@ -169,12 +146,43 @@ def llm_by_name(name: str = "openai/gpt-4o-mini"):
             )
             logger.info(f"   ✅ OpenAI LLM created successfully")
             return llm
+        except Exception as e:
+            logger.error(f"   ❌ Failed to create OpenAI LLM: {e}")
+            raise
             
-    except Exception as e:
-        logger.error(f"   ❌ Failed to create LLM: {e}")
-        logger.error(f"   Error type: {type(e).__name__}")
-        logger.error(f"   Prefix: {prefix}, Model: {model_name}")
-        raise
+    elif prefix == "anthropic":
+        logger.info(f"🧠 Using Anthropic model: {model_name}")
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        logger.info(f"   API Key present: {'Yes' if api_key else 'No'}")
+        
+        try:
+            llm = Anthropic(
+                model=model_name,
+                temperature=0,
+                api_key=api_key
+            )
+            logger.info(f"   ✅ Anthropic LLM created successfully")
+            return llm
+        except Exception as e:
+            logger.error(f"   ❌ Failed to create Anthropic LLM: {e}")
+            raise
+            
+    elif prefix == "sambanova":
+        logger.info(f"   Creating SambaNova LLM with model: {model_name}")
+        
+        llm = SambaNovaCloud(
+            model=model_name,
+            context_window=100000,
+            max_tokens=1024,
+            temperature=0.7,
+            top_k=1,
+            top_p=0.01,
+        )
+        logger.info(f"   ✅ SambaNova LLM created successfully")
+        return llm
+    else:
+        logger.error(f"Unsupported model: {name}")
+        raise ValueError(f"Unsupported model: {name}. Supported providers: ollama, openai, anthropic")
 
 
 def create_llamaindex_agent(tools: Any, llm_name: str, llm=None):
