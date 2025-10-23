@@ -2,7 +2,7 @@
 
 # Learn more about building a configuration: https://promptfoo.dev/docs/configuration/guide
 
-description: "LLM + LLM Agentic Frameworks + MCP Evals"
+description: "All Frameworks + Anthropic Models + 1&2&mulit hop questions"
 
 prompts:
   - "{{question}}"
@@ -26,8 +26,8 @@ providers:
   # -----------------------------
   # Testing LangGraph
   # -----------------------------
-    # - id: "file://langgraph_manager.py"
-    #   label: "langgraph"
+    - id: "file://langgraph_manager.py"
+      label: "langgraph"
   # - id: "file://langgraph_manager.py"
   #   label: "langgraph-ollama/gpt-oss:20b"
   #   config: {
@@ -38,8 +38,8 @@ providers:
   # -----------------------------
   # Testing LllamaIndex
   # -----------------------------
-    # - id: "file://llamaindex_manager.py"
-    #   label: "llamaindex"
+    - id: "file://llamaindex_manager.py"
+      label: "llamaindex"
 
   # - id: "file://llamaindex_manager.py"
   #   label: "llamaindex-ollama/gpt-oss:20b"
@@ -106,45 +106,73 @@ tests:
   #       value: "91"
 
   # 1 hop queries
+
+  # Query to confirm
+  # MATCH (s:Supplier {companyName: 'Tokyo Traders'})-[:SUPPLIES]->(p:Product)
+  # RETURN count(p) as productCount
+  # - vars:
+  #     question: "How many products does Tokyo Traders supply?"
+  #     model_name:
+  #       # - "ollama/llama3.2"
+  #       # - "ollama/gpt-oss:20b"
+  #       # - "ollama/qwen3"
+  #       # - "ollama/lfm2-1.2b"
+  #       # Groq function calling models
+  #       # - "groq/moonshotai/kimi-k2-instruct-0905"
+  #       # - "groq/openai/gpt-oss-20b"
+  #       - "groq/openai/gpt-oss-120b"
+  #       # - "groq/qwen/qwen3-32b"
+  #       - "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+  #       # - "groq/meta-llama/llama-4-maverick-17b-128e-instruct"
+  #       # - "groq/llama-3.3-70b-versatile"
+  #       # - "groq/llama-3.1-8b-instant"
+  #       # - "sambanova/Meta-Llama-3.1-8B-Instruct"
+  #       # - "sambanova/Llama-4-Maverick-17B-128E-Instruct"
+  #       # - "openai/o3-mini"
+  #       # - "openai/gpt-5"
+  #       # - "openai/gpt-4.1"
+  #       # - "anthropic/claude-3-haiku-20240307"
+  #       # - "anthropic/claude-opus-4-1-20250805"
+  #       # - "cerebras/qwen-3-235b-a22b-instruct-2507"
+  #       # - "non-existent-model"
+  #   assert:
+  #     - type: icontains
+  #       value: "3"
+
+  # Query to confirm
+  # MATCH (o:Order)-[:ORDERS]->(p:Product)
+  # WHERE toLower(p.productName) = 'ikura'
+  # RETURN count(o) as orderCount
   - vars:
-      question: "How many products does Tokyo Traders supply?"
+      question: "How many orders for Ikura were made?"
       model_name:
-        - "ollama/llama3.2"
+        # - "ollama/llama3.2"
         # - "ollama/gpt-oss:20b"
-        - "ollama/qwen3"
+        # - "ollama/qwen3"
         # - "ollama/lfm2-1.2b"
         # - "sambanova/Meta-Llama-3.1-8B-Instruct"
         # - "sambanova/Llama-4-Maverick-17B-128E-Instruct"
         # - "openai/o3-mini"
         # - "openai/gpt-5"
         # - "openai/gpt-4.1"
-        # - "anthropic/claude-3-haiku-20240307"
+        # Anthropic models
+        - "anthropic/claude-sonnet-4-5-20250929"
+        - "anthropic/claude-haiku-4-5-20251001"
         - "anthropic/claude-opus-4-1-20250805"
+        # Groq function calling models
+        # - "groq/moonshotai/kimi-k2-instruct-0905"
+        # - "groq/openai/gpt-oss-20b"
+        # - "groq/openai/gpt-oss-120b"
+        # - "groq/qwen/qwen3-32b"
+        # - "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+        # - "groq/meta-llama/llama-4-maverick-17b-128e-instruct"
+        # - "groq/llama-3.3-70b-versatile"
+        # - "groq/llama-3.1-8b-instant"
         # - "cerebras/qwen-3-235b-a22b-instruct-2507"
         # - "non-existent-model"
     assert:
       - type: icontains
-        value: "3"
-
-  # - vars:
-  #     question: "How many orders for Ikura were made?"
-  #     model_name:
-  #       # - "ollama/llama3.2"
-  #       # - "ollama/gpt-oss:20b"
-  #       - "ollama/qwen3"
-  #       # - "ollama/lfm2-1.2b"
-  #       # - "sambanova/Meta-Llama-3.1-8B-Instruct"
-  #       - "sambanova/Llama-4-Maverick-17B-128E-Instruct"
-  #       # - "openai/o3-mini"
-  #       - "openai/gpt-5"
-  #       # - "openai/gpt-4.1"
-  #       # - "anthropic/claude-3-haiku-20240307"
-  #       - "anthropic/claude-opus-4-1-20250805"
-  #       # - "cerebras/qwen-3-235b-a22b-instruct-2507"
-  #       # - "non-existent-model"
-  #   assert:
-  #     - type: icontains
-  #       value: "33"
+        value: "33"
 
 
   # 2 hop queries
@@ -153,11 +181,36 @@ tests:
   # MATCH (c:Customer)-[:PURCHASED]->(o:Order)-[:ORDERS]->(p:Product)-[:PART_OF]->(cat:Category)
   # WHERE cat.categoryName = 'Produce'
   # RETURN count(DISTINCT c) as customerCount
-  # - vars:
-  #     question: "How many customers purchased Produce products?"
-  #   assert:
-  #     - type: icontains
-  #       value: "63"
+  - vars:
+      question: "How many customers purchased Produce products?"
+      model_name:
+        # - "ollama/llama3.2"
+        # - "ollama/gpt-oss:20b"
+        # - "ollama/qwen3"
+        # - "ollama/lfm2-1.2b"
+        # - "sambanova/Meta-Llama-3.1-8B-Instruct"
+        # - "sambanova/Llama-4-Maverick-17B-128E-Instruct"
+        # - "openai/o3-mini"
+        # - "openai/gpt-5"
+        # - "openai/gpt-4.1"
+        # Anthropic models
+        - "anthropic/claude-sonnet-4-5-20250929"
+        - "anthropic/claude-haiku-4-5-20251001"
+        - "anthropic/claude-opus-4-1-20250805"
+        # Groq function calling models
+        # - "groq/moonshotai/kimi-k2-instruct-0905"
+        # - "groq/openai/gpt-oss-20b"
+        # - "groq/openai/gpt-oss-120b"
+        # - "groq/qwen/qwen3-32b"
+        # - "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+        # - "groq/meta-llama/llama-4-maverick-17b-128e-instruct"
+        # - "groq/llama-3.3-70b-versatile"
+        # - "groq/llama-3.1-8b-instant"
+        # - "cerebras/qwen-3-235b-a22b-instruct-2507"
+        # - "non-existent-model"
+    assert:
+      - type: icontains
+        value: "63"
 
   # Query to confirm
   # MATCH (c:Customer)-[:PURCHASED]->(o:Order)-[:ORDERS]->(p:Product)
@@ -185,11 +238,36 @@ tests:
   # WITH c, o,  sum(or.quantity) as total_quantity
   # RETURN c, o, total_quantity
   # ORDER BY total_quantity DESC
-  # - vars:
-  #     question: "Which customer orders the largest number of Longlife Tofu?"
-  #   assert:
-  #     - type: icontains
-  #       value: "Ernst Handel"
+  - vars:
+      question: "Which customer orders the largest number of Longlife Tofu?"
+      model_name:
+        # - "ollama/llama3.2"
+        # - "ollama/gpt-oss:20b"
+        # - "ollama/qwen3"
+        # - "ollama/lfm2-1.2b"
+        # - "sambanova/Meta-Llama-3.1-8B-Instruct"
+        # - "sambanova/Llama-4-Maverick-17B-128E-Instruct"
+        # - "openai/o3-mini"
+        # - "openai/gpt-5"
+        # - "openai/gpt-4.1"
+        # Anthropic models
+        - "anthropic/claude-sonnet-4-5-20250929"
+        - "anthropic/claude-haiku-4-5-20251001"
+        - "anthropic/claude-opus-4-1-20250805"
+        # Groq function calling models
+        # - "groq/moonshotai/kimi-k2-instruct-0905"
+        # - "groq/openai/gpt-oss-20b"
+        # - "groq/openai/gpt-oss-120b"
+        # - "groq/qwen/qwen3-32b"
+        # - "groq/meta-llama/llama-4-scout-17b-16e-instruct"
+        # - "groq/meta-llama/llama-4-maverick-17b-128e-instruct"
+        # - "groq/llama-3.3-70b-versatile"
+        # - "groq/llama-3.1-8b-instant"
+        # - "cerebras/qwen-3-235b-a22b-instruct-2507"
+        # - "non-existent-model"
+    assert:
+      - type: icontains
+        value: "Ernst Handel"
 
   # Query to confirm
   # MATCH (o:Order)-[or:ORDERS]-(p:Product)

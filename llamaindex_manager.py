@@ -11,6 +11,7 @@ from llama_index.core.agent.workflow import ReActAgent
 from llama_index.llms.openai import OpenAI
 from llama_index.llms.ollama import Ollama
 from llama_index.llms.anthropic import Anthropic
+from llama_index.llms.groq import Groq
 from llama_index.llms.sambanovasystems import SambaNovaCloud
 from llama_index.core import Settings
 from llama_index.tools.mcp import BasicMCPClient, McpToolSpec
@@ -167,6 +168,18 @@ def llm_by_name(name: str = "openai/gpt-4o-mini"):
             logger.error(f"   ❌ Failed to create Anthropic LLM: {e}")
             raise
             
+    elif prefix == "groq":
+        logger.info(f"🤖 Using Groq model: {model_name}")
+        api_key = os.getenv("GROQ_API_KEY")
+        logger.info(f"   API Key present: {'Yes' if api_key else 'No'}")
+        
+        try:
+            llm = Groq(model=model_name, api_key=api_key)
+            logger.info(f"   ✅ Groq LLM created successfully")
+            return llm
+        except Exception as e:
+            logger.error(f"   ❌ Failed to create Groq LLM: {e}")
+            raise
     elif prefix == "sambanova":
         logger.info(f"   Creating SambaNova LLM with model: {model_name}")
         

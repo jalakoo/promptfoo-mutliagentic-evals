@@ -4,6 +4,7 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langchain_community.llms import Ollama
 from langchain_anthropic import ChatAnthropic
+from langchain_groq import ChatGroq
 # from langchain_community.llms import SambaNova
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from mcp import StdioServerParameters
@@ -146,17 +147,21 @@ Return ONLY the final answer for the user, not internal reasoning.""")
                     logger.info(f"🔧 Creating LLM for model: {llm_name}")
                     
                     if "ollama/" in llm_name:
-                        model_name = llm_name.split("/")[1]
+                        model_name = llm_name.split("/", 1)[1]
                         logger.info(f"🦙 Using Ollama model: {model_name}")
                         llm = Ollama(model=model_name, base_url="http://localhost:11434")
                     elif "openai/" in llm_name:
-                        model_name = llm_name.split("/")[1]
+                        model_name = llm_name.split("/", 1)[1]
                         logger.info(f"🤖 Using OpenAI model: {model_name}")
                         llm = ChatOpenAI(model=model_name)
                     elif "anthropic/" in llm_name:
-                        model_name = llm_name.split("/")[1]
+                        model_name = llm_name.split("/", 1)[1]
                         logger.info(f"🧠 Using Anthropic model: {model_name}")
                         llm = ChatAnthropic(model=model_name, temperature=0)
+                    elif "groq/" in llm_name:
+                        model_name = llm_name.split("/", 1)[1]
+                        logger.info(f"🤖 Using Groq model: {model_name}")
+                        llm = ChatGroq(model=model_name)
                     elif "sambanova/" in llm_name:
                         logger.error(f"SambaNova is not supported for the current version of langchain-core")
                         raise ValueError("SambaNova is not supported for the current version of langchain-core")
