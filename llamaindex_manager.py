@@ -3,14 +3,15 @@ import os
 import asyncio
 from typing import Dict, Any, List
 from dotenv import load_dotenv
+from shared_utils import get_model_name_from_config
 
 # LlamaIndex imports
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.agent.workflow import ReActAgent
-
 from llama_index.llms.openai import OpenAI
 from llama_index.llms.ollama import Ollama
 from llama_index.llms.anthropic import Anthropic
+from llama_index.llms.groq import Groq
 from llama_index.llms.sambanovasystems import SambaNovaCloud
 from llama_index.core import Settings
 from llama_index.tools.mcp import BasicMCPClient, McpToolSpec
@@ -20,17 +21,83 @@ logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     filename="./logs/debug_llamaindex_manager.log",
-    filemode="w",  # append to the file if it exists
+    filemode="w",  # overwrite the file on each run
 )
 logger = logging.getLogger(__name__)
 
 # Load .env file
 load_dotenv()
 
+# Global variable to store the last Cypher query used
+_last_cypher_query = ""
+
+
+def wrap_tools_with_cypher_tracking(tools):
+    """Wrap MCP tools to capture Cypher queries"""
+    global _last_cypher_query
+    
+    wrapped_tools = []
+    for tool in tools:
+        if hasattr(tool, 'metadata') and tool.metadata.name and 'cypher' in tool.metadata.name.lower():
+            logger.info(f"🔧 Wrapping tool: {tool.metadata.name}")
+            
+            # Wrap multiple possible call methods
+            methods_to_wrap = ['call', '_call', 'ainvoke', '_ainvoke', 'run', '_run']
+            
+            for method_name in methods_to_wrap:
+                if hasattr(tool, method_name):
+                    original_method = getattr(tool, method_name)
+                    
+                    def create_wrapper(orig_method, method_name):
+                        def cypher_wrapper(*args, **kwargs):
+                            global _last_cypher_query
+                            
+                            logger.info(f"🔍 Tool {tool.metadata.name} called via {method_name} with args: {args}, kwargs: {kwargs}")
+                            
+                            # Extract query from various argument patterns
+                            query_found = False
+                            
+                            # Check kwargs
+                            if 'query' in kwargs:
+                                _last_cypher_query = kwargs['query']
+                                logger.info(f"🔍 Captured Cypher query from kwargs: {_last_cypher_query}")
+                                query_found = True
+                            
+                            # Check first argument if it's a dict
+                            elif args and len(args) > 0 and isinstance(args[0], dict) and 'query' in args[0]:
+                                _last_cypher_query = args[0]['query']
+                                logger.info(f"🔍 Captured Cypher query from args[0]: {_last_cypher_query}")
+                                query_found = True
+                            
+                            # Check all args for dict with query
+                            elif args:
+                                for i, arg in enumerate(args):
+                                    if isinstance(arg, dict) and 'query' in arg:
+                                        _last_cypher_query = arg['query']
+                                        logger.info(f"🔍 Captured Cypher query from args[{i}]: {_last_cypher_query}")
+                                        query_found = True
+                                        break
+                            
+                            if not query_found:
+                                logger.debug(f"🔍 No query found in {method_name} call for {tool.metadata.name}")
+                            
+                            # Call the original method
+                            return orig_method(*args, **kwargs)
+                        
+                        return cypher_wrapper
+                    
+                    # Replace the method
+                    setattr(tool, method_name, create_wrapper(original_method, method_name))
+                    logger.info(f"✅ Wrapped {method_name} for {tool.metadata.name}")
+        
+        wrapped_tools.append(tool)
+    
+    return wrapped_tools
+
 
 def llm_by_name(name: str = "openai/gpt-4o-mini"):
-    """Create LLM instance based on model name"""
-    logger.info(f"Creating LLM for name: {name}")
+    """Create LLM instance based on model name with explicit validation"""
+    logger.info(f"🔧 Creating LLM for model: {name}")
     
     # Extract prefix and model name
     if "/" in name:
@@ -41,18 +108,19 @@ def llm_by_name(name: str = "openai/gpt-4o-mini"):
     
     logger.info(f"   Parsed prefix: {prefix}, model: {model_name}")
     
-    try:
-        if prefix == "ollama":
+    # Validate supported model providers
+    if prefix == "ollama":
+        logger.info(f"🦙 Using Ollama model: {model_name}")
+        
+        base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        timeout = os.getenv("OLLAMA_TIMEOUT", 120)
+        request_timeout = os.getenv("OLLAMA_REQUEST_TIMEOUT", 180)
 
-            base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-            timeout = os.getenv("OLLAMA_TIMEOUT", 120)
-            request_timeout = os.getenv("OLLAMA_REQUEST_TIMEOUT", 180)
-
-            logger.info(f"   Creating Ollama LLM with model: {model_name}")
-            logger.info(f"   Base URL: {base_url}")
-            logger.info(f"   Timeout: {timeout} seconds")
-            logger.info(f"   Request Timeout: {request_timeout} seconds")
-            
+        logger.info(f"   Base URL: {base_url}")
+        logger.info(f"   Timeout: {timeout} seconds")
+        logger.info(f"   Request Timeout: {request_timeout} seconds")
+        
+        try:
             llm = Ollama(
                 model=model_name,
                 temperature=0,
@@ -62,40 +130,16 @@ def llm_by_name(name: str = "openai/gpt-4o-mini"):
             )
             logger.info(f"   ✅ Ollama LLM created successfully")
             return llm
+        except Exception as e:
+            logger.error(f"   ❌ Failed to create Ollama LLM: {e}")
+            raise
             
-        elif prefix == "anthropic":
-            logger.info(f"   Creating Anthropic LLM with model: {model_name}")
-            api_key = os.getenv("ANTHROPIC_API_KEY")
-            logger.info(f"   API Key present: {'Yes' if api_key else 'No'}")
-            
-            llm = Anthropic(
-                model=model_name,
-                temperature=0,
-                api_key=api_key
-            )
-            logger.info(f"   ✅ Anthropic LLM created successfully")
-            return llm
-            
-        elif prefix == "sambanova":
-            logger.info(f"   Creating SambaNova LLM with model: {model_name}")
-            
-            llm = SambaNovaCloud(
-                model=model_name,
-                context_window=100000,
-                max_tokens=1024,
-                temperature=0.7,
-                top_k=1,
-                top_p=0.01,
-            )
-            logger.info(f"   ✅ SambaNova LLM created successfully")
-            return llm
-            
-        else:
-            # Default to OpenAI - many LLMs conform to this interface
-            logger.info(f"   Creating OpenAI LLM with model: {model_name}")
-            api_key = os.getenv("OPENAI_API_KEY")
-            logger.info(f"   API Key present: {'Yes' if api_key else 'No'}")
-            
+    elif prefix == "openai":
+        logger.info(f"🤖 Using OpenAI model: {model_name}")
+        api_key = os.getenv("OPENAI_API_KEY")
+        logger.info(f"   API Key present: {'Yes' if api_key else 'No'}")
+        
+        try:
             llm = OpenAI(
                 model=model_name,
                 temperature=0,
@@ -103,23 +147,71 @@ def llm_by_name(name: str = "openai/gpt-4o-mini"):
             )
             logger.info(f"   ✅ OpenAI LLM created successfully")
             return llm
+        except Exception as e:
+            logger.error(f"   ❌ Failed to create OpenAI LLM: {e}")
+            raise
             
-    except Exception as e:
-        logger.error(f"   ❌ Failed to create LLM: {e}")
-        logger.error(f"   Error type: {type(e).__name__}")
-        logger.error(f"   Prefix: {prefix}, Model: {model_name}")
-        raise
+    elif prefix == "anthropic":
+        logger.info(f"🧠 Using Anthropic model: {model_name}")
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        logger.info(f"   API Key present: {'Yes' if api_key else 'No'}")
+        
+        try:
+            llm = Anthropic(
+                model=model_name,
+                temperature=0,
+                api_key=api_key
+            )
+            logger.info(f"   ✅ Anthropic LLM created successfully")
+            return llm
+        except Exception as e:
+            logger.error(f"   ❌ Failed to create Anthropic LLM: {e}")
+            raise
+            
+    elif prefix == "groq":
+        logger.info(f"🤖 Using Groq model: {model_name}")
+        api_key = os.getenv("GROQ_API_KEY")
+        logger.info(f"   API Key present: {'Yes' if api_key else 'No'}")
+        
+        try:
+            llm = Groq(model=model_name, api_key=api_key)
+            logger.info(f"   ✅ Groq LLM created successfully")
+            return llm
+        except Exception as e:
+            logger.error(f"   ❌ Failed to create Groq LLM: {e}")
+            raise
+    elif prefix == "sambanova":
+        logger.info(f"   Creating SambaNova LLM with model: {model_name}")
+        
+        llm = SambaNovaCloud(
+            model=model_name,
+            context_window=100000,
+            max_tokens=1024,
+            temperature=0.7,
+            top_k=1,
+            top_p=0.01,
+        )
+        logger.info(f"   ✅ SambaNova LLM created successfully")
+        return llm
+    else:
+        logger.error(f"Unsupported model: {name}")
+        raise ValueError(f"Unsupported model: {name}. Supported providers: ollama, openai, anthropic")
 
 
-def create_llamaindex_agent(tools: Any, llm_name: str):
+def create_llamaindex_agent(tools: Any, llm_name: str, llm=None):
     """Create a LlamaIndex FunctionAgent with Neo4j MCP tools"""
     logger.info(f"Creating LlamaIndex agent for model: {llm_name}")
     logger.info(f"   Tools available: {len(tools)}")
     logger.info(f"   Tool names: {[tool.metadata.name for tool in tools]}")
     
     try:
-        llm = llm_by_name(llm_name)
-        logger.info(f"✅ LLM created: {type(llm).__name__}")
+        # Use provided LLM or create new one
+        if llm is None:
+            llm = llm_by_name(llm_name)
+            logger.info(f"✅ LLM created: {type(llm).__name__}")
+        else:
+            logger.info(f"✅ Using provided LLM: {type(llm).__name__}")
+        
         logger.info(f"   Model: {llm.model if hasattr(llm, 'model') else 'unknown'}")
 
         # Switch statement to choose agent type based on LLM provider
@@ -171,6 +263,13 @@ For questions about data:
 Return ONLY the final answer for the user, not internal reasoning.""",
             )
             logger.info("   ✅ FunctionAgent created successfully")
+        
+        # Add callback to monitor tool usage
+        if hasattr(agent, 'callback_manager'):
+            logger.info("   Adding callback manager for tool monitoring")
+            # The callback manager will help us track tool calls
+        else:
+            logger.info("   Agent doesn't have callback_manager, using wrapper approach")
 
         logger.info(f"✅ Agent created: {type(agent).__name__}")
         return agent
@@ -185,12 +284,35 @@ Return ONLY the final answer for the user, not internal reasoning.""",
 
 async def run(prompt: str, full_model_name: str):
     """Run the LlamaIndex agent with the given prompt and model"""
-    logger.info(f"Running LlamaIndex with model: {full_model_name} and prompt: {prompt}")
+    global _last_cypher_query
+    
+    # Reset the Cypher query tracker
+    _last_cypher_query = ""
     
     try:
-        # Step 1: Create MCP client
+        # Step 1: Create MCP client with enhanced logging
         logger.info("Step 1: Creating MCP client...")
         client = BasicMCPClient("uvx", args=["mcp-neo4j-cypher@0.3.0"], env=os.environ)
+        
+        # Add logging to the client's call method if it exists
+        if hasattr(client, 'call_tool'):
+            original_call_tool = client.call_tool
+            
+            def logged_call_tool(tool_name, arguments):
+                global _last_cypher_query
+                
+                logger.info(f"🔍 MCP Client calling tool: {tool_name} with args: {arguments}")
+                
+                # Extract Cypher query if this is a Cypher tool
+                if 'cypher' in tool_name.lower() and isinstance(arguments, dict) and 'query' in arguments:
+                    _last_cypher_query = arguments['query']
+                    logger.info(f"🔍 Captured Cypher query from MCP client: {_last_cypher_query}")
+                
+                return original_call_tool(tool_name, arguments)
+            
+            client.call_tool = logged_call_tool
+            logger.info("✅ Added logging to MCP client call_tool method")
+        
         logger.info("✅ Created MCP client successfully")
 
         # Step 2: Create MCP tool spec
@@ -198,9 +320,10 @@ async def run(prompt: str, full_model_name: str):
         mcp_tool_spec = McpToolSpec(client=client)
         logger.info("✅ Created MCP tool spec successfully")
 
-        # Step 3: Get tools
+        # Step 3: Get tools and wrap them for Cypher tracking
         logger.info("Step 3: Loading MCP tools...")
         tools = await mcp_tool_spec.to_tool_list_async()
+        tools = wrap_tools_with_cypher_tracking(tools)
         logger.info(f"✅ Loaded {len(tools)} MCP tools: {[tool.metadata.name for tool in tools]}")
         
         # Step 4: Create LLM instance
@@ -226,9 +349,9 @@ async def run(prompt: str, full_model_name: str):
                 logger.error(f"   Or check: ollama list")
                 return f"Ollama connectivity error: {ollama_error}"
 
-        # Step 6: Create agent
+        # Step 6: Create agent (pass the already-created LLM)
         logger.info("Step 6: Creating agent...")
-        agent = create_llamaindex_agent(tools, full_model_name)
+        agent = create_llamaindex_agent(tools, full_model_name, llm)
         logger.info(f"✅ Created agent: {type(agent).__name__}")
         
         # Step 7: Run agent
@@ -285,15 +408,27 @@ def call_api(
         Dict[str, str]: The response from the LlamaIndex agent.
     """
 
+    logger.info(f"\n\n================================================")
+    logger.info(f"Running LlamaIndex with prompt: {prompt} and context: {context}")
+    logger.info(f"================================================\n\n")
     logger.debug(f"call_api: prompt: {prompt}")
     logger.debug(f"call_api: options: {options}")
     logger.debug(f"call_api: context: {context}")
 
     try:
-        model_name = options["config"]["model_name"]
+        # Get model name using shared utility
+        model_name = get_model_name_from_config(options, context)
+        
+        logger.info(f"🔧 Running LlamaIndex with model: {model_name}")
         result = asyncio.run(run(prompt, model_name))
+        
+        # Append Cypher query if one was captured
+        result_text = str(result)
+        if _last_cypher_query:
+            result_text += f"\n\nCypher used: {_last_cypher_query}"
+        
         # Normalize to Promptfoo provider response shape
-        return {"output": result}
+        return {"output": result_text}
     except Exception as e:
         # Can't use print here when promptfoo running
         # Uncertain what promptfoos own logger name is, if even using

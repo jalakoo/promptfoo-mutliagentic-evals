@@ -7,17 +7,27 @@ requires-python = ">=3.13"
 dependencies = [
     "crewai>=0.203.1",
     "crewai-tools[mcp]>=0.76.0",
+    "groq>=0.33.0",
+    "langchain-anthropic>=1.0.0",
+    "langchain-community>=0.4",
     "langchain-core>=1.0.0",
+    "langchain-groq>=1.0.0",
     "langchain-mcp-adapters>=0.1.11",
+    "langchain-openai>=1.0.0",
     "langgraph>=1.0.0",
     "litellm>=1.74.9",
     "llama-index>=0.14.5",
     "llama-index-llms-anthropic>=0.9.7",
+    "llama-index-llms-groq>=0.4.1",
     "llama-index-llms-ollama>=0.8.0",
     "llama-index-llms-openai>=0.6.5",
     "llama-index-llms-sambanovasystems>=0.5.1",
     "llama-index-tools-mcp>=0.4.2",
     "mcp>=1.18.0",
+    "ollama>=0.6.0",
     "python-dotenv>=1.1.1",
     "sseclient-py>=1.8.0",
 ]
+
+[project.scripts]
+reset-logs = "reset_logs:reset_logs"
